@@ -113,11 +113,17 @@ from BaseHTTPServer import BaseHTTPRequestHandler
 
 class WebhookRequestHandler(BaseHTTPRequestHandler):
     """Extends the BaseHTTPRequestHandler class and handles the incoming HTTP requests."""
-
+    HOOK_KEY = '/12345'
+    HOOK_BRANCH = 'none'
+    
     def do_POST(self):
         """Invoked on incoming POST requests"""
         from threading import Timer
-
+        
+        if self.path != self.HOOK_KEY:
+            print "Invalid!! HOOK_KEY"
+            return
+        
         # Extract repository URL(s) from incoming request body
         repo_urls = self.get_repo_urls_from_request()
 
@@ -126,7 +132,7 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         # Wait one second before we do git pull (why?)
-        Timer(1.0, GitAutoDeploy.process_repo_urls, [repo_urls]).start()
+        Timer(1.0, GitAutoDeploy.process_repo_urls, [repo_urls, self.HOOK_BRANCH]).start()
 
     def get_repo_urls_from_request(self):
         """Parses the incoming request and extracts all possible URLs to the repository in question. Since repos can
@@ -137,8 +143,13 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
         content_type = self.headers.getheader('content-type')
         length = int(self.headers.getheader('content-length'))
         body = self.rfile.read(length)
-
-        data = json.loads(body)
+        
+        try: 
+            data = json.loads(body)
+        except:
+            print "invalid json data"
+            data = []
+            
 
         repo_urls = []
 
@@ -154,7 +165,10 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
             if not 'repository' in data:
                 print "ERROR - Unable to recognize data format"
                 return repo_urls
-
+            
+            if 'ref' in data :
+                self.HOOK_BRANCH = data['ref']
+            
             # One repository may posses multiple URLs for different protocols
             for k in ['url', 'git_http_url', 'git_ssh_url']:
                 if k in data['repository']:
@@ -304,20 +318,26 @@ class GitAutoDeploy(object):
         return mpid
 
     @staticmethod
-    def process_repo_urls(urls):
+    def process_repo_urls(urls, branch):
         import os
         import time
 
         # Get a list of configured repositories that matches the incoming web hook reqeust
-        repo_configs = GitAutoDeploy().get_matching_repo_configs(urls)
-
+        repo_configs = GitAutoDeploy().get_matching_repo_configs(urls, branch)
+        config = GitAutoDeploy().get_config();
+        
         if len(repo_configs) == 0:
             print 'Unable to find any of the repository URLs in the config: %s' % ', '.join(urls)
             return
 
         # Process each matching repository
         for repo_config in repo_configs:
-
+            
+            if 'dirty_dir' in config and 'name' in repo_config :
+                fo = open(config['dirty_dir'] + "dirty-" + repo_config['name'], 'w+')
+                fo.write('dirty')
+                fo.close()
+                        
             running_lock = Lock(os.path.join(repo_config['path'], 'status_running'))
             waiting_lock = Lock(os.path.join(repo_config['path'], 'status_waiting'))
             try:
@@ -448,7 +468,7 @@ class GitAutoDeploy(object):
 
         return self._config
 
-    def get_matching_repo_configs(self, urls):
+    def get_matching_repo_configs(self, urls, branch):
         """Iterates over the various repo URLs provided as argument (git://, ssh:// and https:// for the repo) and
         compare them to any repo URL specified in the config"""
 
@@ -458,8 +478,8 @@ class GitAutoDeploy(object):
         for url in urls:
             for repo_config in config['repositories']:
                 if repo_config in configs:
-                    continue
-                if repo_config['url'] == url:
+                    continue        
+                if repo_config['url'] == url and 'refs/heads/'+repo_config['branch'] == branch:
                     configs.append(repo_config)
                 elif 'url_without_usernme' in repo_config and repo_config['url_without_usernme'] == url:
                     configs.append(repo_config)
