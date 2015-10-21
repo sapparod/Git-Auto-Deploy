@@ -335,11 +335,6 @@ class GitAutoDeploy(object):
         # Process each matching repository
         for repo_config in repo_configs:
             
-            if 'dirty_dir' in config and 'name' in repo_config :
-                fo = open(config['dirty_dir'] + "dirty-" + repo_config['name'], 'w+')
-                fo.write('dirty')
-                fo.close()
-                        
             running_lock = Lock(os.path.join(repo_config['path'], 'status_running'))
             waiting_lock = Lock(os.path.join(repo_config['path'], 'status_waiting'))
             try:
@@ -378,6 +373,13 @@ class GitAutoDeploy(object):
                 # Release the lock if it's ours
                 if waiting_lock.has_lock():
                     waiting_lock.release()
+            if 'dirty_dir' in config and 'name' in repo_config :
+                try : 
+                    fo = open(config['dirty_dir'] + "dirty-" + repo_config['name'], 'w+')
+                    fo.write('dirty')
+                    fo.close()
+                except :
+                    print 'Unable to create dirty files' 
 
     def get_default_config_path(self):
         import os
