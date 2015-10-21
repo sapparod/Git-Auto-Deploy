@@ -168,7 +168,9 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
             
             if 'ref' in data :
                 self.HOOK_BRANCH = data['ref']
-            
+            else :
+                self.HOOK_BRANCH = 'none'
+                
             # One repository may posses multiple URLs for different protocols
             for k in ['url', 'git_http_url', 'git_ssh_url']:
                 if k in data['repository']:
